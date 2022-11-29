@@ -4,10 +4,6 @@ suppressMessages(library(stringr))
 suppressMessages(library(dplyr))
 suppressMessages(library(plink2R))
 
-
-annota <- read_tsv("/dcs04/nilanjan/data/jzhang2/pwas/pipeline/Results_GRCh38/prot.anno_autosomal.txt")
-prot <- read_tsv("/dcs04/nilanjan/data/jzhang2/pwas/PWAS_tutorial/Plasma_Protein_EA_hg38.pos")
-
 allele.qc = function(a1,a2,ref1,ref2) {
 a1 = toupper(a1)
 a2 = toupper(a2)
@@ -40,12 +36,17 @@ snp[["flip"]] = a1 != ref1
 return(snp)
 }
 
-pred_matrix = matrix(nrow=498,ncol=nrow(prot))
+## Read protein .pos file in the provided package
+prot <- read_tsv("/dcs04/nilanjan/data/jzhang2/pwas/PWAS_tutorial/Plasma_Protein_EA_hg38.pos")
 
+pred_matrix = matrix(nrow=498,ncol=nrow(prot)) # number of samples by number of proteins
+
+## for each protein, impute the levels and save in the ith column in the pred_matrix
 for (i in 1:nrow(prot)) {
     chr <- prot$CHR[i]
 
-    load(paste0("/dcs04/nilanjan/data/jzhang2/pwas/pipeline/Results_GRCh38/White/PWAS/coefs/",prot$WGT[i]))
+    ## Load the weights in the provided package
+    load(paste0("/dcs04/nilanjan/data/jzhang2/pwas/pipeline/Results_GRCh38/White/PWAS/coefs/",prot$WGT[i])) 
 
     wgt.matrix[is.na(wgt.matrix)] = 0
     m <- wgt.matrix[ , "enet" ]!=0
@@ -65,18 +66,16 @@ for (i in 1:nrow(prot)) {
     tmp <- tryCatch({ genos = read_plink(paste0("/dcs04/nilanjan/data/jzhang2/pwas/pipeline/Results_GRCh38/White/PWAS/1000G_imputed/tmp/",i,"-",prot$WGT[i]),impute="avg") }, error=function(e) e, warning=function(w) w)
     if(is(tmp,"warning")){ pred_matrix[,i] = 0; next }
 
+    ## Please note it is very IMPORTANT to scale genotype matrix here, because the weights are for scaled genotype matrix!!
     sdtmp <- apply(genos$bed, MARGIN = 2, FUN=sd)
     a <- which(sdtmp==0)
     if(length(a)>0){
-        genos$bed = scale(genos$bed[,-a])
+        genos$bed = scale(genos$bed[,-a]) ## scale genotype matrix
         genos$bim = genos$bim[-a,]
     }else{
-        genos$bed = scale(genos$bed)
+        genos$bed = scale(genos$bed) ## scale genotype matrix
         genos$bim = genos$bim
     }
-
-    # list of SNPs that overlap loaded features
-    genos.keep = rep(F,nrow(genos$bim))
 
     # Match up the SNPs and weights
     m = match( snps[,2] , genos$bim[,2] )
@@ -84,7 +83,6 @@ for (i in 1:nrow(prot)) {
     snps = snps[m.keep,,drop=F]
 
     wgt.matrix = wgt.matrix[m.keep,,drop=F]
-    genos.keep[ m[m.keep] ] = T
 
     cur.genos = genos$bed[,m[m.keep],drop=F]
     cur.bim = genos$bim[m[m.keep],,drop=F]
@@ -95,7 +93,7 @@ for (i in 1:nrow(prot)) {
     # Predict into reference
     pred_matrix[,i] = cur.genos %*% wgt.matrix[ , "enet" ]
 
-    rm(list = c("genos","sdtmp","a","cur.genos","cur.bim","genos.keep"))
+    rm(list = c("genos","sdtmp","a","cur.genos","cur.bim"))
 
     print(i)
 }
